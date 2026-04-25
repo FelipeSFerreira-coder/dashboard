@@ -45,6 +45,21 @@
 
     const emptyForm = { obra: "", cliente: "", mes: "Jan", prevInicio: "", prevFim: "", prevPostes: "", realPostes: "", prevCabo: "", realCabo: "", etapas: etapaVazia() };
 
+    const CARGOS = ["Eletricista", "Ajudante"];
+    const funcInit = [
+      { id: 1, nome: "João Silva",     cargo: "Eletricista", valorDiaria: 250 },
+      { id: 2, nome: "Pedro Oliveira", cargo: "Ajudante",    valorDiaria: 180 },
+    ];
+    const diariasInit = [
+      { id: 1, funcionarioId: 1, data: "2026-04-01", obra: "Trecho A — Centro",     obs: "" },
+      { id: 2, funcionarioId: 1, data: "2026-04-02", obra: "Trecho A — Centro",     obs: "" },
+      { id: 3, funcionarioId: 2, data: "2026-04-01", obra: "Trecho A — Centro",     obs: "" },
+      { id: 4, funcionarioId: 2, data: "2026-04-02", obra: "Trecho B — Bairro Sul", obs: "" },
+      { id: 5, funcionarioId: 2, data: "2026-04-03", obra: "Trecho B — Bairro Sul", obs: "" },
+    ];
+    const emptyFormFunc   = { nome: "", cargo: "Eletricista", valorDiaria: "" };
+    const emptyFormDiaria = { funcionarioId: "", data: "", obra: "", obs: "" };
+
     // ── utils ─────────────────────────────────────────────────────────────────
     const pct = (r, p) => p > 0 ? Math.min(100, Math.round((r / p) * 100)) : 0;
 
@@ -198,8 +213,18 @@
       const [editId, setEditId]         = useState(null);
       const [companyName, setCompany]   = useState("Nexenergia");
       const [editingName, setEditingName] = useState(false);
+      const [funcionarios, setFuncionarios] = useState(funcInit);
+      const [diarias, setDiarias]           = useState(diariasInit);
+      const [formFunc, setFormFunc]         = useState(emptyFormFunc);
+      const [formDiaria, setFormDiaria]     = useState(emptyFormDiaria);
+      const [editFuncId, setEditFuncId]     = useState(null);
+      const [editDiariaId, setEditDiariaId] = useState(null);
+      const [subTab, setSubTab]             = useState("resumo");
+      const [filtroMes, setFiltroMes]       = useState("Todos");
 
-      const setF = (k, v) => setForm(p => ({ ...p, [k]: v }));
+      const setF  = (k, v) => setForm(p => ({ ...p, [k]: v }));
+      const setFF = (k, v) => setFormFunc(p => ({ ...p, [k]: v }));
+      const setFD = (k, v) => setFormDiaria(p => ({ ...p, [k]: v }));
       const updateObra = updated => setObras(p => p.map(o => o.id === updated.id ? updated : o));
 
       const totalPrevPostes = obras.reduce((a, o) => a + (+o.prevPostes || 0), 0);
@@ -223,6 +248,16 @@
         return Object.values(map);
       }, [obras]);
 
+      const diariasFiltradas = useMemo(() => {
+        if (filtroMes === "Todos") return diarias;
+        return diarias.filter(d => meses[new Date(d.data + "T00:00:00").getMonth()] === filtroMes);
+      }, [diarias, filtroMes]);
+
+      const resumo = useMemo(() => funcionarios.map(f => {
+        const dias = diariasFiltradas.filter(d => d.funcionarioId === f.id);
+        return { ...f, totalDias: dias.length, totalPagar: dias.length * f.valorDiaria };
+      }), [funcionarios, diariasFiltradas]);
+
       const saveRow = () => {
         if (!form.obra) return;
         if (editId !== null) {
@@ -237,11 +272,34 @@
       const startEdit  = o => { setForm({ ...o }); setEditId(o.id); setTab("lancamentos"); };
       const cancelEdit = () => { setForm(emptyForm); setEditId(null); };
 
+      const saveFunc = () => {
+        if (!formFunc.nome || !formFunc.valorDiaria) return;
+        if (editFuncId !== null) {
+          setFuncionarios(p => p.map(f => f.id === editFuncId ? { ...formFunc, id: editFuncId, valorDiaria: +formFunc.valorDiaria } : f));
+          setEditFuncId(null);
+        } else {
+          setFuncionarios(p => [...p, { ...formFunc, id: Date.now(), valorDiaria: +formFunc.valorDiaria }]);
+        }
+        setFormFunc(emptyFormFunc);
+      };
+
+      const saveDiaria = () => {
+        if (!formDiaria.funcionarioId || !formDiaria.data) return;
+        if (editDiariaId !== null) {
+          setDiarias(p => p.map(d => d.id === editDiariaId ? { ...formDiaria, id: editDiariaId, funcionarioId: +formDiaria.funcionarioId } : d));
+          setEditDiariaId(null);
+        } else {
+          setDiarias(p => [...p, { ...formDiaria, id: Date.now(), funcionarioId: +formDiaria.funcionarioId }]);
+        }
+        setFormDiaria(emptyFormDiaria);
+      };
+
       const tabs = [
         { key: "overview",    label: "Visão Geral" },
         { key: "projetos",    label: "Gestão de Projetos" },
         { key: "lancamentos", label: "Lançamentos" },
         { key: "graficos",    label: "Gráficos" },
+        { key: "diarias",     label: "Diárias" },
       ];
 
       return (
@@ -467,6 +525,253 @@
                 <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 md:col-span-2">
                   <h3 className="text-sm font-semibold text-gray-600 mb-4">Curva de Avanço (%) — Postes e Cabo por Mês</h3>
                   <LineChartComp data={chartData} />
+                </div>
+              </div>
+            )}
+
+            {/* ── Diárias ─────────────────────────────────────────────────────── */}
+            {tab === "diarias" && (
+              <div style={{ display:"flex", flexDirection:"column", gap:"1rem" }}>
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+
+                  {/* Sub-navegação */}
+                  <div className="flex border-b border-gray-100 overflow-x-auto">
+                    {[
+                      { key: "resumo",       label: "Resumo de Pagamentos" },
+                      { key: "lancamentos",  label: "Lançamentos" },
+                      { key: "funcionarios", label: "Funcionários" },
+                    ].map(st => (
+                      <button key={st.key} onClick={() => setSubTab(st.key)}
+                        className={`px-5 py-3 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${subTab === st.key ? "border-green-600 text-green-700" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
+                        {st.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* ── Resumo ── */}
+                  {subTab === "resumo" && (
+                    <div>
+                      <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-3 flex-wrap">
+                        <h3 className="font-semibold text-gray-700 flex-1">Resumo de Diárias e Pagamentos</h3>
+                        <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
+                          <span className="text-xs text-gray-500">Filtrar mês:</span>
+                          <select value={filtroMes} onChange={e => setFiltroMes(e.target.value)}
+                            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400">
+                            <option>Todos</option>
+                            {meses.map(m => <option key={m}>{m}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 p-5">
+                        {[
+                          { label: "Total de Diárias",    value: diariasFiltradas.length,                                                                                sub: filtroMes === "Todos" ? "todos os períodos" : filtroMes },
+                          { label: "Total a Pagar",        value: resumo.reduce((a,r) => a+r.totalPagar, 0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}), sub: filtroMes === "Todos" ? "todos os períodos" : filtroMes },
+                          { label: "Funcionários Ativos",  value: resumo.filter(r => r.totalDias > 0).length,                                                           sub: "com diárias no período" },
+                        ].map(k => (
+                          <div key={k.label} className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                            <p className="text-xs text-gray-400 font-medium mb-1">{k.label}</p>
+                            <p className="text-2xl font-bold" style={{ color: GREEN }}>{k.value}</p>
+                            <p className="text-xs text-gray-400 mt-1">{k.sub}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-xs text-gray-400 bg-gray-50 uppercase tracking-wide">
+                              <th className="text-left px-4 py-3">Funcionário</th>
+                              <th className="text-left px-4 py-3">Cargo</th>
+                              <th className="text-center px-4 py-3">Diárias</th>
+                              <th className="text-center px-4 py-3">Valor Diária</th>
+                              <th className="text-center px-4 py-3">Total a Pagar</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {resumo.map(r => (
+                              <tr key={r.id} className="border-t border-gray-50 hover:bg-gray-50">
+                                <td className="px-4 py-3 font-medium text-gray-700">{r.nome}</td>
+                                <td className="px-4 py-3">
+                                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${r.cargo === "Eletricista" ? "bg-blue-100 text-blue-700" : "bg-orange-100 text-orange-700"}`}>{r.cargo}</span>
+                                </td>
+                                <td className="px-4 py-3 text-center font-semibold text-gray-700">{r.totalDias}</td>
+                                <td className="px-4 py-3 text-center text-gray-600">{r.valorDiaria.toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}</td>
+                                <td className="px-4 py-3 text-center font-bold" style={{ color: GREEN }}>{r.totalPagar.toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr style={{ borderTop:"2px solid #dcfce7", backgroundColor:"#f0fdf4" }} className="font-semibold text-sm">
+                              <td className="px-4 py-3 text-green-700" colSpan={2}>TOTAL GERAL</td>
+                              <td className="px-4 py-3 text-center text-green-700">{diariasFiltradas.length}</td>
+                              <td></td>
+                              <td className="px-4 py-3 text-center font-bold text-green-700">{resumo.reduce((a,r) => a+r.totalPagar, 0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── Lançamentos de diárias ── */}
+                  {subTab === "lancamentos" && (
+                    <div>
+                      <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                        <h3 className="font-semibold text-gray-700">Registro de Diárias</h3>
+                        <span className="text-xs text-gray-400">{diarias.length} registros</span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-xs text-gray-400 bg-gray-50 uppercase tracking-wide">
+                              <th className="text-left px-4 py-3">Data</th>
+                              <th className="text-left px-4 py-3">Funcionário</th>
+                              <th className="text-left px-4 py-3">Cargo</th>
+                              <th className="text-left px-4 py-3">Obra</th>
+                              <th className="text-left px-4 py-3">Obs</th>
+                              <th className="px-4 py-3"></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {[...diarias].sort((a,b) => b.data.localeCompare(a.data)).map(d => {
+                              const func = funcionarios.find(f => f.id === d.funcionarioId);
+                              return (
+                                <tr key={d.id} className="border-t border-gray-50 hover:bg-gray-50">
+                                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{new Date(d.data+"T00:00:00").toLocaleDateString("pt-BR")}</td>
+                                  <td className="px-4 py-3 font-medium text-gray-700">{func ? func.nome : "—"}</td>
+                                  <td className="px-4 py-3">
+                                    {func && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${func.cargo === "Eletricista" ? "bg-blue-100 text-blue-700" : "bg-orange-100 text-orange-700"}`}>{func.cargo}</span>}
+                                  </td>
+                                  <td className="px-4 py-3 text-gray-500">{d.obra || "—"}</td>
+                                  <td className="px-4 py-3 text-gray-400 text-xs">{d.obs || "—"}</td>
+                                  <td className="px-4 py-3">
+                                    <div style={{ display:"flex", gap:"8px", justifyContent:"flex-end" }}>
+                                      <button onClick={() => { setFormDiaria({ ...d, funcionarioId: String(d.funcionarioId) }); setEditDiariaId(d.id); }} style={{ fontSize:"12px", color:"#60a5fa", cursor:"pointer", background:"none", border:"none" }}>✎</button>
+                                      <button onClick={() => setDiarias(p => p.filter(x => x.id !== d.id))} style={{ fontSize:"12px", color:"#f87171", cursor:"pointer", background:"none", border:"none" }}>✕</button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                            {diarias.length === 0 && (
+                              <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400 text-sm">Nenhuma diária registrada ainda.</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="px-5 py-5 border-t border-gray-100 bg-gray-50">
+                        <p className="text-xs font-semibold text-gray-500 mb-3">{editDiariaId !== null ? "✎ Editando diária" : "Registrar Nova Diária"}</p>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          <div>
+                            <label className="text-xs text-gray-500 font-medium block mb-1">Data *</label>
+                            <input type="date" value={formDiaria.data} onChange={e => setFD("data", e.target.value)}
+                              className="border border-gray-200 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-green-400" />
+                          </div>
+                          <div>
+                            <label className="text-xs text-gray-500 font-medium block mb-1">Funcionário *</label>
+                            <select value={formDiaria.funcionarioId} onChange={e => setFD("funcionarioId", e.target.value)}
+                              className="border border-gray-200 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-green-400">
+                              <option value="">Selecione...</option>
+                              {funcionarios.map(f => <option key={f.id} value={f.id}>{f.nome} ({f.cargo})</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-xs text-gray-500 font-medium block mb-1">Obra</label>
+                            <select value={formDiaria.obra} onChange={e => setFD("obra", e.target.value)}
+                              className="border border-gray-200 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-green-400">
+                              <option value="">— Selecione —</option>
+                              {obras.map(o => <option key={o.id} value={o.obra}>{o.obra}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-xs text-gray-500 font-medium block mb-1">Observação</label>
+                            <input type="text" value={formDiaria.obs} onChange={e => setFD("obs", e.target.value)} placeholder="Opcional..."
+                              className="border border-gray-200 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-green-400" />
+                          </div>
+                        </div>
+                        <div style={{ display:"flex", gap:"8px", marginTop:"16px" }}>
+                          <button onClick={saveDiaria} style={{ backgroundColor:GREEN, color:"white", fontSize:"14px", padding:"8px 24px", borderRadius:"8px", border:"none", cursor:"pointer", fontWeight:500 }}>
+                            {editDiariaId !== null ? "Salvar Edição" : "+ Registrar Diária"}
+                          </button>
+                          {editDiariaId !== null && (
+                            <button onClick={() => { setFormDiaria(emptyFormDiaria); setEditDiariaId(null); }} style={{ fontSize:"14px", padding:"8px 24px", borderRadius:"8px", border:"1px solid #d1d5db", color:"#6b7280", background:"white", cursor:"pointer" }}>Cancelar</button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── Funcionários ── */}
+                  {subTab === "funcionarios" && (
+                    <div>
+                      <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                        <h3 className="font-semibold text-gray-700">Cadastro de Funcionários</h3>
+                        <span className="text-xs text-gray-400">{funcionarios.length} funcionários</span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-xs text-gray-400 bg-gray-50 uppercase tracking-wide">
+                              <th className="text-left px-4 py-3">Nome</th>
+                              <th className="text-left px-4 py-3">Cargo</th>
+                              <th className="text-center px-4 py-3">Valor da Diária</th>
+                              <th className="px-4 py-3"></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {funcionarios.map(f => (
+                              <tr key={f.id} className="border-t border-gray-50 hover:bg-gray-50">
+                                <td className="px-4 py-3 font-medium text-gray-700">{f.nome}</td>
+                                <td className="px-4 py-3">
+                                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${f.cargo === "Eletricista" ? "bg-blue-100 text-blue-700" : "bg-orange-100 text-orange-700"}`}>{f.cargo}</span>
+                                </td>
+                                <td className="px-4 py-3 text-center font-semibold" style={{ color: GREEN }}>{f.valorDiaria.toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}</td>
+                                <td className="px-4 py-3">
+                                  <div style={{ display:"flex", gap:"8px", justifyContent:"flex-end" }}>
+                                    <button onClick={() => { setFormFunc({ nome:f.nome, cargo:f.cargo, valorDiaria:String(f.valorDiaria) }); setEditFuncId(f.id); }} style={{ fontSize:"12px", color:"#60a5fa", cursor:"pointer", background:"none", border:"none" }}>✎</button>
+                                    <button onClick={() => setFuncionarios(p => p.filter(x => x.id !== f.id))} style={{ fontSize:"12px", color:"#f87171", cursor:"pointer", background:"none", border:"none" }}>✕</button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                            {funcionarios.length === 0 && (
+                              <tr><td colSpan={4} className="px-4 py-8 text-center text-gray-400 text-sm">Nenhum funcionário cadastrado.</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="px-5 py-5 border-t border-gray-100 bg-gray-50">
+                        <p className="text-xs font-semibold text-gray-500 mb-3">{editFuncId !== null ? "✎ Editando funcionário" : "Cadastrar Novo Funcionário"}</p>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                          <div>
+                            <label className="text-xs text-gray-500 font-medium block mb-1">Nome *</label>
+                            <input type="text" value={formFunc.nome} onChange={e => setFF("nome", e.target.value)} placeholder="Nome completo"
+                              className="border border-gray-200 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-green-400" />
+                          </div>
+                          <div>
+                            <label className="text-xs text-gray-500 font-medium block mb-1">Cargo *</label>
+                            <select value={formFunc.cargo} onChange={e => setFF("cargo", e.target.value)}
+                              className="border border-gray-200 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-green-400">
+                              {CARGOS.map(c => <option key={c}>{c}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-xs text-gray-500 font-medium block mb-1">Valor da Diária (R$) *</label>
+                            <input type="number" value={formFunc.valorDiaria} onChange={e => setFF("valorDiaria", e.target.value)} placeholder="Ex: 250"
+                              className="border border-gray-200 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-green-400" />
+                          </div>
+                        </div>
+                        <div style={{ display:"flex", gap:"8px", marginTop:"16px" }}>
+                          <button onClick={saveFunc} style={{ backgroundColor:GREEN, color:"white", fontSize:"14px", padding:"8px 24px", borderRadius:"8px", border:"none", cursor:"pointer", fontWeight:500 }}>
+                            {editFuncId !== null ? "Salvar Edição" : "+ Cadastrar Funcionário"}
+                          </button>
+                          {editFuncId !== null && (
+                            <button onClick={() => { setFormFunc(emptyFormFunc); setEditFuncId(null); }} style={{ fontSize:"14px", padding:"8px 24px", borderRadius:"8px", border:"1px solid #d1d5db", color:"#6b7280", background:"white", cursor:"pointer" }}>Cancelar</button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                 </div>
               </div>
             )}
